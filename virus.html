@@ -1,0 +1,246 @@
+
+<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Viral Spread</title>
+    <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0px;
+      border: 0;
+      overflow: hidden; /*  Disable scrollbars */
+      display: block;  /* No floating content on sides */
+    }
+    </style>
+</head>
+
+<body>
+    <canvas id='c' style='position:absolute; left:0px; top:0px; background-color:#000;' ondblclick="openFullscreen()">
+    </canvas>
+
+    <script>
+	var
+	start			= null,
+	gameSpeed		= 30,
+	elem			= document.documentElement;
+	canvas 			= document.getElementById('c'),
+	context			= canvas.getContext('2d'),
+	personRadius	= 3,
+	personEdge		= 1,
+	colorPerson		= "#fdd",
+	colorSick		= "#8f3",
+	colorCured		= "#09f",
+	colorDead		= "#222",
+	colorOutline	= "#abc",
+	personSpeed 	= 2,
+	peopleTotal		= 750,
+	peopleSick		= 1,
+	recoveryTime	= 300,
+	immunityTime	= 300,
+	survivalRate	= 78,
+	useCircles		= false;
+	
+
+	function initialize() {
+		// Check and update dimension data whenever the window is resized
+		window.addEventListener('resize', resizeCanvas, false);
+		
+		// populate
+		createPopulation( peopleTotal, peopleSick );
+		
+		// request fullscreen
+		openFullscreen();
+
+		// Resize the canvas, re-draw as needed
+		resizeCanvas();
+		
+		//setInterval( redraw, 20 );
+		window.requestAnimationFrame( redraw );
+	}
+	
+	function openFullscreen() {
+		if (elem.requestFullscreen) {
+			elem.requestFullscreen();
+		} else if (elem.mozRequestFullScreen) { // FireFox
+			elem.mozRequestFullScreen();
+		} else if (elem.webkitRequestFullscreen) { // Chrome, Safari, Opera
+			elem.webkitRequestFullscreen();
+		} else if (elem.msRequestFullscreen) { // IE Edge
+			elem.msRequestFullscreen();
+		}
+	}
+	
+	// handle when window is resized
+	function resizeCanvas() {
+		canvas.width = window.innerWidth;
+		canvas.height = window.innerHeight;
+		
+		//redraw();  // old
+	}
+	
+	// return a random point anywhere along the horizontal axis of the canvas
+	function anywhereX() {
+		return Math.round( Math.random() * (window.innerWidth - (personRadius * 2)) + personRadius );
+	}
+	
+	// return a random point anywhere along the vertical axis of the canvas
+	function anywhereY() {
+		return Math.round( Math.random() * (window.innerHeight - (personRadius * 2)) + personRadius );
+	}
+	
+	// this function gives a random integer between 1 and the value max
+	function diceRoll(max){
+		return Math.round( Math.random() * max );
+	}
+	
+	function flipflop(){
+		var x = (Math.random() * 2) - 1;
+		return x;
+	}
+	
+	// object definition for person
+	var person = {
+		x: 5,
+		y: 5,
+		speedx: 1,
+		speedy: 1,
+		health: "healthy",
+		lifespan: 1
+	};
+	
+	// call this to create a new person
+	function createPerson(){
+		var newPerson = Object.create( person );
+		newPerson.x = anywhereX();
+		newPerson.y = anywhereY();
+		newPerson.speedx = flipflop() * personSpeed;
+		newPerson.speedy = flipflop() * personSpeed;
+		newPerson.health = "healthy";
+		newPerson.lifespan = 1;
+		return newPerson;
+	}
+	
+	// returns a color value based on a person's health
+	function getHealthColor( person ){
+		if( person.health == "healthy" )
+			return colorPerson;
+		if( person.health == "infected" )
+			return colorSick;
+		if( person.health == "cured" )
+			return colorCured;
+		if( person.health == "dead" )
+			return colorDead;
+	}
+	
+	function currentMillis(){
+		var t = new Date();
+		return t;
+	}
+	
+	// draw a circle on the canvas representing a person
+	function drawPerson( person ) {
+		context.fillStyle = getHealthColor( person );
+		if( useCircles ){
+			//context.lineWidth = personEdge;
+			//context.strokeStyle = colorOutline;
+			context.beginPath();
+			context.arc(person.x, person.y, personRadius, 0, 2 * Math.PI);
+			context.fill();
+		} else {
+			context.fillRect( person.x-personRadius, person.y-personRadius, personRadius*2, personRadius*2 );
+		}
+	}
+	
+	// update a person
+	function updatePerson( index, progress ){
+		var p = people[i];
+		
+		// do boundary check
+		if( p.x + personRadius > window.innerWidth ) p.speedx = -Math.abs(p.speedx);
+		if( p.x - personRadius < 0 ) p.speedx = Math.abs(p.speedx);
+		if( p.y - personRadius < 0 ) p.speedy = Math.abs(p.speedy);
+		if( p.y + personRadius > window.innerHeight ) p.speedy = -Math.abs(p.speedy);
+		
+		// Check for people interacting with each other
+		for( j = 0; j < peopleTotal - 1; j++ ){
+			if( (j != index) && (people[j].health != "dead")  ){	// avoid checking same person, and dead people
+				if( dist( p.x, p.y, people[j].x, people[j].y ) < ( personRadius * 2.1 )){	// contact!
+					p.speedx *= -1;
+					p.speedy *= -1;
+					people[j].speedx *= -1;
+					people[j].speedy *= -1;
+					
+					if( (p.health == "healthy") && (people[j].health == "infected") ){
+						p.health = "infected";
+						p.lifespan = 1;
+					}
+					if( (people[j].health == "healthy") && (p.health == "infected") ){
+						people[j].health = "infected";
+						people[j].lifespan = 1;
+					}
+				}
+			}
+		}
+		
+		// update person position
+		p.x += (p.speedx * progress);
+		p.y += (p.speedy * progress);
+		
+		// If sick, check on timeline and heal after duration
+		if( p.health == "infected" ){
+			p.lifespan += progress;
+			if( p.lifespan > recoveryTime ){
+				if( diceRoll(100) > 100 - survivalRate ){
+					p.health = "cured";
+					p.lifespan = 1;
+				} else { p.health = "dead"; }
+			}
+		}
+		
+		// If cured, let immunity run out before a person can be infected against
+		if( p.health == "cured" ){
+			p.lifespan += progress;
+			if(  p.lifespan > immunityTime ){
+				p.health = "healthy";
+				p.lifespan = 1;
+			}
+		}
+	}
+	
+	function redraw( timestamp ) {
+		if( !start ) start = timestamp;
+		var progress = (timestamp - start) / gameSpeed;
+		start = timestamp;
+		
+		context.clearRect( 0, 0, canvas.width, canvas.height );
+		for( i = 0; i < peopleTotal - 1; i++ ){
+			if( people[i].health != "dead" )
+				updatePerson( i, progress );
+				
+			drawPerson( people[i] );
+		}
+		
+		window.requestAnimationFrame( redraw );
+	}
+	
+	function dist( x1, y1, x2, y2 ){
+		return Math.sqrt( Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+	}
+	
+	function createPopulation( count, numSick ){
+		for( i = 0; i < count; i++ ){
+			people.push( createPerson() );
+			if( i < peopleSick )
+				people[i].health = "infected";
+		}
+	}
+	
+	var people = [];
+		
+	// Start listening to resize events and draw canvas
+   initialize();
+    </script>
+</body> 
+</html>
